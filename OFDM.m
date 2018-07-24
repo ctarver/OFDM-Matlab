@@ -43,6 +43,7 @@ classdef OFDM
             obj.symbol_alphabet = obj.QAM_Alphabet(obj.constellation);
         end
         
+        
         function [out, fd_symbols] = use(obj)
             %use. Use the modulator.
             
