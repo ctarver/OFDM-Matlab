@@ -1,4 +1,4 @@
-classdef OFDM
+classdef OFDM < handle
     %OFDM Class for an OFDM signal.
     %
     %	Author:	Chance Tarver (2018)
@@ -10,14 +10,25 @@ classdef OFDM
         constellation
         symbol_alphabet
         cp_length
+        cp_legnth_start_of_slot
         nSymbols
         fft_size
         sampling_rate
+        use_rrc_window
+        window_length
+        rrc_taps
     end
     
-    properties (Constant, Hidden)  
+    properties (Constant, Hidden)
         constellation_library = {'QPSK','16QAM','64QAM'};
         constellaton_order=[4 16 64];
+        n_active_scs = [72 180 300 600 900 1200];
+        window_lengths=[4 6 4 6 8 8];  % https://www.mathworks.com/help/lte/ref/lteofdmmodulate.html#bugx3kl-1_head
+        fft_sizes = [128 256 512 1024 2048]
+        every_seven_cp_length = [10 20 40 80 160];
+        cp_lengths = [9 18 36 72 144];
+        td_cp_length_every_seven = 5.2; % us
+        td_cp_length_normal = 4.69;  % us
     end
     
     methods
@@ -35,19 +46,31 @@ classdef OFDM
             obj.nSubcarriers =  params.nSubcarriers;
             obj.subcarrier_spacing = params.subcarrier_spacing;
             obj.constellation = params.constellation;
-            obj.cp_length = params.cp_length;
             obj.nSymbols = params.nSymbols;
             
             obj.fft_size = 2^ceil(log2(obj.nSubcarriers));
             obj.sampling_rate = obj.subcarrier_spacing * obj.fft_size;
+            
+            cp_dictionary = containers.Map(obj.fft_sizes, ...
+                obj.cp_lengths);
+            obj.cp_length = cp_dictionary(obj.fft_size);
+            
             obj.symbol_alphabet = obj.QAM_Alphabet(obj.constellation);
+            obj.use_rrc_window = params.rrc;
+            
+            if params.rrc
+                window_length_dictionary = containers.Map(obj.n_active_scs, ...
+                    obj.window_lengths);
+                obj.window_length = window_length_dictionary(obj.nSubcarriers);
+                obj.generate_rrc();
+            else
+                obj.window_length = 0;
+            end
         end
         
         
         function [out, fd_symbols] = use(obj)
             %use. Use the modulator.
-            
-            % TODO: add option to input data.
             
             % Create random symbols on the constellation
             fd_symbols = zeros(obj.nSubcarriers, obj.nSymbols);
@@ -55,24 +78,58 @@ classdef OFDM
                 * rand(size(fd_symbols))));
             
             % iterate over symbols.
-            out = zeros(obj.fft_size + obj.cp_length, obj.nSymbols);
+            td_symbols = zeros(obj.fft_size + obj.cp_length + obj.window_length, obj.nSymbols);
             for i = 1:obj.nSymbols
                 td_waveform = obj.frequency_to_time_domain(fd_symbols(:, i));
-                out(:, i) = obj.add_cyclic_prefic(td_waveform);
+                cp_td_waveform = obj.add_cyclic_prefic(td_waveform);
+                td_symbols(:, i) = obj.add_windows(cp_td_waveform);
             end
-            out = out(:); % Make into a single column
+            out = obj.create_full_waveform(td_symbols);
         end
         
+        function out = create_full_waveform(obj, in)
+            N = obj.window_length;
+            K = obj.nSymbols;
+            samp_per_sym = obj.fft_size+obj.cp_length;
+            out = zeros((samp_per_sym)*obj.nSymbols, 1);
+            
+            % first symbol is special
+            out(1:samp_per_sym) = in(N+1:end, 1);
+            
+            % Other symbols overlap with previous
+            for i = 2:K
+               current_index = (i-1)*samp_per_sym + 1 - N;
+               out(current_index:current_index+samp_per_sym+N-1) = out(current_index:current_index+samp_per_sym+N-1) + in(:, i);
+            end
+        end
+        
+        function out = add_windows(obj, in)
+            out = in;
+            N = obj.window_length;
+            if obj.use_rrc_window
+                out(1:N) = in(1:N) .* obj.rrc_taps;
+                out(end-N+1:end) = in(end-N+1:end) .* flip(obj.rrc_taps);
+            end
+        end
+        
+        function generate_rrc(obj)
+            N = obj.window_length;
+            obj.rrc_taps = zeros(N, 1);
+            for i = 1 : N
+                obj.rrc_taps(i) =  0.5 * (1 - sin(pi*(N + 1 - 2*i)/(2*N)));
+            end
+        end
         
         function out = add_cyclic_prefic(obj, in)
-            out = zeros(length(in) + obj.cp_length, 1);
-            out(obj.cp_length + 1:end) = in;
-            out(1: obj.cp_length) = in(end-obj.cp_length+1:end); 
+            total_cp_length = obj.cp_length + obj.window_length;
+            out = zeros(length(in) + total_cp_length, 1);
+            out(total_cp_length + 1:end) = in;
+            out(1:total_cp_length) = in(end - total_cp_length+1:end);
         end
         
         
         function out = remove_cyclic_prefix(obj, in)
-           out = in(obj.cp_length+1:end); 
+            out = in(obj.cp_length+1:end);
         end
         
         
@@ -91,7 +148,7 @@ classdef OFDM
             ifft_input = zeros(obj.fft_size, 1);
             ifft_input(2:obj.nSubcarriers/2 + 1) = in(obj.nSubcarriers/2 + 1:end);
             ifft_input(end - obj.nSubcarriers/2 + 1 :end) = in(1:obj.nSubcarriers/2);
-            out = ifft(ifft_input);  
+            out = ifft(ifft_input);
         end
         
         
@@ -106,10 +163,10 @@ classdef OFDM
             symbol_length = obj.fft_size + obj.cp_length;
             
             for i = 0:obj.nSymbols-1
-               td_symbol = in(symbol_length*i + 1: symbol_length*(i+1));
-               td = obj.remove_cyclic_prefix(td_symbol);
-               fd = obj.time_domain_to_frequency(td);
-               resource_grid(:,i+1) = fd;
+                td_symbol = in(symbol_length*i + 1: symbol_length*(i+1));
+                td = obj.remove_cyclic_prefix(td_symbol);
+                fd = obj.time_domain_to_frequency(td);
+                resource_grid(:,i+1) = fd;
             end
             out = resource_grid;
         end
