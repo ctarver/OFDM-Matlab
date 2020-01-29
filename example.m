@@ -6,6 +6,7 @@
 % July 2018;
 %
 % Modified:
+%   Jan 2020. Add windowing bw symbols and an absolute cyclic prefix
 %   Nov 2019. Add RFWebLab option.
 
 %% ------------- BEGIN CODE --------------
@@ -13,11 +14,11 @@
 use_rf_weblab = 1;  % if 0, we'll just add a little noise to the signal.
 
 % Setup OFDM
-params.nSubcarriers = 1200;
+params.n_subcarriers = 1200;
 params.subcarrier_spacing = 15e3; % 15kHz subcarrier spacing
 params.constellation = 'QPSK';
-params.cp_length = 144; % Number of samples in cyclic prefix.
-params.nSymbols = 1;
+params.n_symbols = 1;
+params.use_windowing = true;
 modulator = OFDM(params);
 
 % Modulate and transmit 
