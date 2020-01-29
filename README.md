@@ -1,4 +1,5 @@
 # OFDM for Matlab
+[![DOI](https://zenodo.org/badge/141947502.svg)](https://zenodo.org/badge/latestdoi/141947502)
 
 This is an OFDM class for MATLAB. This class allows the user to generate OFDM signals with various subcarrier spacings, cyclic prefix lengths, and number of symbols.
 
