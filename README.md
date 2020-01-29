@@ -6,7 +6,7 @@ This is an OFDM class for MATLAB. This class allows the user to generate OFDM si
 Please cite the repo if you use it in your projects. An example bibtex entry is below.
 
 ```
-@misc{TarverILADPD,
+@misc{TarverOFDMMatlab,
   author       = {Tarver, Chance},
   title        = {OFDM for Matlab v1.0},
   month        = jan,
