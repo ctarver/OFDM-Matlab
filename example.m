@@ -6,7 +6,7 @@
 % July 2018;
 %
 % Modified:
-%   Jan 2020. Add windowing bw symbols and an absolute cyclic prefix
+%   Jan 2020. Add windowing bw symbols, absolute cyclic prefix, and evm
 %   Nov 2019. Add RFWebLab option.
 
 %% ------------- BEGIN CODE --------------
@@ -22,9 +22,9 @@ params.use_windowing = true;
 modulator = OFDM(params);
 
 % Modulate and transmit 
-[tx_data, tx_constellations] = modulator.use;
+[tx_data, ~] = modulator.use;
 if use_rf_weblab
-    dbm_power = -24;
+    dbm_power = -30;
     pa = webRF(dbm_power);
     % Upsample and send through RFWeblab and downsample
     [pa_out, pa_out_upsampled, pa_input_upsampled] = ...
@@ -36,13 +36,11 @@ end
 % Demod
 rx_constellations = modulator.demod(pa_out);
 
-% Error
-error = rx_constellations - tx_constellations;
-if norm(error)/length(error) < 0.01
-    disp('Success! RX Data = TX Data');
-else
-    disp('Something may not be correct...');
-end
+% Error Vector Magnitude
+evm = modulator.calculate_evm(rx_constellations);
+fprintf(' EVM = %d %%\n', evm);
+
+modulator.plot_rx_errors(rx_constellations);
 
 figure
 plot(real(pa_out))

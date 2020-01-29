@@ -17,6 +17,8 @@ classdef OFDM < handle
         use_rrc_window
         window_length
         rrc_taps
+        last_tx_time_d % previous transmission in time domain
+        last_tx_freq_d % previous transmission in freq domain
     end
     
     properties (Constant, Hidden)
@@ -53,8 +55,7 @@ classdef OFDM < handle
                 obj.cp_lengths_us_normal);
             cp_length_us = cp_dictionary(obj.subcarrier_spacing/1000)*1e-6;
             obj.cp_length = round(cp_length_us / period);
-            str = sprintf(' Cyclic prefix = %d samples', obj.cp_length);
-            disp(str);
+            fprintf(' Cyclic prefix = %d samples', obj.cp_length);
             obj.symbol_alphabet = obj.QAM_Alphabet(obj.constellation);
             obj.use_rrc_window = params.use_windowing;
             
@@ -63,7 +64,7 @@ classdef OFDM < handle
                     obj.window_lengths);
                 try
                     obj.window_length = window_length_dictionary(obj.n_subcarriers);
-                catch 
+                catch
                     obj.window_length = 8;
                 end
                 obj.generate_rrc();
@@ -89,6 +90,8 @@ classdef OFDM < handle
                 td_symbols(:, i) = obj.add_windows(cp_td_waveform);
             end
             out = obj.create_full_waveform(td_symbols);
+            obj.last_tx_freq_d = fd_symbols;
+            obj.last_tx_time_d = out;            
         end
         
         function out = create_full_waveform(obj, in)
@@ -102,8 +105,8 @@ classdef OFDM < handle
             
             % Other symbols overlap with previous
             for i = 2:K
-               current_index = (i-1)*samp_per_sym + 1 - N;
-               out(current_index:current_index+samp_per_sym+N-1) = out(current_index:current_index+samp_per_sym+N-1) + in(:, i);
+                current_index = (i-1)*samp_per_sym + 1 - N;
+                out(current_index:current_index+samp_per_sym+N-1) = out(current_index:current_index+samp_per_sym+N-1) + in(:, i);
             end
         end
         
@@ -173,6 +176,26 @@ classdef OFDM < handle
                 resource_grid(:,i+1) = fd;
             end
             out = resource_grid;
+        end
+        
+        
+        function evm = calculate_evm(obj, rx_symbols)
+            error = rx_symbols - obj.last_tx_freq_d;
+            error = error(:); %Convert to vector
+            
+            original_signal = obj.last_tx_freq_d(:);
+            evm = 100 * norm(error) / norm(original_signal);
+        end
+        
+        
+        function plot_rx_errors(obj, rx_symbols)
+            error = rx_symbols - obj.last_tx_freq_d;
+            figure(20);
+            hold on;
+            title('Error per Subcarrier')
+            plot(abs(error));
+            xlabel('Subcarrier Index');
+            ylabel('abs(error)');
         end
         
         
